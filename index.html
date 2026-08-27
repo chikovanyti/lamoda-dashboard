@@ -480,6 +480,16 @@
     vertical-align: middle;
   }
   tbody tr:hover td { background: var(--bg-card-hover); }
+  .category-row td {
+    cursor: pointer;
+    font-weight: 700;
+    background: var(--bg-card-hover);
+    user-select: none;
+  }
+  .category-row:hover td { background: var(--border); }
+  .category-row .arrow { display: inline-block; margin-right: 8px; font-size: 10px; transition: transform 0.15s ease; }
+  .category-row.open .arrow { transform: rotate(90deg); }
+  .category-row .muted-count { font-weight: 400; color: var(--ink-muted); margin-left: 6px; }
   .total-row td {
     position: sticky;
     bottom: 0;
@@ -578,6 +588,7 @@
         <button class="tab" role="tab" data-group="article" style="padding:5px 11px;font-size:12px;">Общие (по артикулу)</button>
         <button class="tab" role="tab" data-group="size" style="padding:5px 11px;font-size:12px;">Детально (по размерам)</button>
       </div>
+      <button class="btn-outline" id="categoryGroupToggle" style="padding:6px 12px;margin-left:8px;">Группировать по типу</button>
     </div>
     <div class="foot-note" style="margin:-2px 0 10px;">
       Выберите сезон в выпадающем списке напротив артикула (Зима / Демисезон / Лето). Когда закончите — нажмите
@@ -769,8 +780,9 @@ function weeklyOverall(endDateStr) {
   return sumRawBuckets(dates.map(d => DATA.daily.overall[d]));
 }
 
-const state = { level: "daily", periodKey: null, search: "", sortKey: "revenue", sortDir: "desc", groupBy: "article", chartRange: { from: null, to: null } };
+const state = { level: "daily", periodKey: null, search: "", sortKey: "revenue", sortDir: "desc", groupBy: "article", chartRange: { from: null, to: null }, categoryGroup: false };
 const pendingSeasons = {};
+const expandedCategories = new Set();
 const SEASON_LABELS = { "": "—", "зима": "Зима", "демисезон": "Демисезон", "лето": "Лето" };
 
 function seasonSelectHtml(baseArt, season) {
@@ -1202,7 +1214,7 @@ function renderTable() {
     }
   });
 
-  const rowsHtml = rows.map(r => {
+  function rowHtml(r) {
     const noCost = !r.has_cost;
     const profitStr = noCost ? "—" : fmtMoney(r.net_profit);
     const marginStr = noCost ? "—" : fmtPct(r.net_margin_pct);
@@ -1222,7 +1234,30 @@ function renderTable() {
       <td class="num">${r.stock}</td>
       <td class="num ${r.days_left !== null && r.days_left < 7 ? "neg" : ""}">${daysStr}</td>
     </tr>`;
-  }).join("");
+  }
+
+  let rowsHtml;
+  if (state.categoryGroup) {
+    const groups = new Map();
+    for (const r of rows) {
+      const cat = r.name || "Без категории";
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(r);
+    }
+    const catNames = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b, "ru"));
+    rowsHtml = catNames.map(cat => {
+      const items = groups.get(cat);
+      const isOpen = expandedCategories.has(cat);
+      const catTotal = sumRawBuckets(items);
+      const header = `<tr class="category-row${isOpen ? " open" : ""}" data-category="${cat}">
+        <td colspan="9"><span class="arrow">▶</span>${cat}<span class="muted-count">${items.length} артикул${pluralArt(items.length)} · ${fmtMoney(catTotal.revenue)} ₽</span></td>
+      </tr>`;
+      const body = isOpen ? items.map(rowHtml).join("") : "";
+      return header + body;
+    }).join("");
+  } else {
+    rowsHtml = rows.map(rowHtml).join("");
+  }
 
   let totalHtml = "";
   if (rows.length > 0) {
@@ -1287,6 +1322,21 @@ document.getElementById("groupTabs").addEventListener("click", e => {
   if (!btn) return;
   state.groupBy = btn.dataset.group;
   document.querySelectorAll("#groupTabs .tab").forEach(t => t.setAttribute("aria-selected", t === btn ? "true" : "false"));
+  renderTable();
+});
+document.getElementById("categoryGroupToggle").addEventListener("click", e => {
+  state.categoryGroup = !state.categoryGroup;
+  e.currentTarget.setAttribute("aria-pressed", String(state.categoryGroup));
+  e.currentTarget.style.background = state.categoryGroup ? "var(--accent)" : "";
+  e.currentTarget.style.color = state.categoryGroup ? "var(--accent-ink)" : "";
+  renderTable();
+});
+document.getElementById("tableBody").addEventListener("click", e => {
+  const row = e.target.closest(".category-row");
+  if (!row) return;
+  const cat = row.dataset.category;
+  if (expandedCategories.has(cat)) expandedCategories.delete(cat);
+  else expandedCategories.add(cat);
   renderTable();
 });
 document.getElementById("periodSelect").addEventListener("change", e => {
