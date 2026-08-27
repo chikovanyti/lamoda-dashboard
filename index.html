@@ -620,7 +620,7 @@
         <thead>
           <tr>
             <th data-key="article">Артикул</th>
-            <th title="ABC-анализ по выручке: A — топ ~80% выручки, B — следующие ~15%, C — остальное">ABC</th>
+            <th data-key="abc" title="ABC-анализ по выручке: A — топ ~80% выручки, B — следующие ~15%, C — остальное">ABC</th>
             <th>Сезон</th>
             <th data-key="orders_count" class="num">Заказы</th>
             <th data-key="buyout_rate_pct" class="num">% выкупа</th>
@@ -1217,6 +1217,25 @@ function renderTable() {
     const stock = DATA.stock[sku] || { total: 0, days_left: null, avg_daily_units_30d: 0 };
     return { sku, ...b, ext: label.ext, name: label.name, brand: label.brand, stock: stock.total, days_left: stock.days_left, avgDaily: stock.avg_daily_units_30d || 0 };
   });
+  // "Остаток" is a live snapshot, not a period-scoped number -- a sku with stock but zero
+  // orders in the selected day/week/month would otherwise vanish from this table entirely,
+  // making the ИТОГО stock total undercount the real warehouse total (mismatching the KPI
+  // tile above, which always sums every sku). Add those silently-in-stock skus back in with
+  // an all-zero sales bucket so stock totals always agree regardless of period.
+  const seenSkus = new Set(rows.map(r => r.sku));
+  for (const [sku, s] of Object.entries(DATA.stock)) {
+    if (seenSkus.has(sku) || !s.total) continue;
+    const label = articleLabel(sku);
+    rows.push({
+      sku, ext: label.ext, name: label.name, brand: label.brand,
+      stock: s.total, days_left: s.days_left, avgDaily: s.avg_daily_units_30d || 0,
+      revenue: 0, units: 0, orders_count: 0,
+      ordered_revenue: 0, ordered_units: 0, ordered_orders_count: 0,
+      buyout_rate_pct: null, profit: null, margin_pct: null,
+      net_profit: null, net_margin_pct: null, has_cost: false, cost_coverage: 0,
+      cost_total: 0, cost_units: 0,
+    });
+  }
   if (state.groupBy === "article") rows = groupRowsByArticle(rows);
   if (q) {
     rows = rows.filter(r =>
@@ -1225,7 +1244,16 @@ function renderTable() {
       (r.sku || "").toLowerCase().includes(q)
     );
   }
-  const key = state.sortKey === "article" ? "ext" : state.sortKey;
+  // ABC rank order (A=1, B=2, C=3) so sorting this column always reads A → B → C
+  // ascending, not alphabetically reversed like a normal desc-first text sort.
+  const abcMap = computeABC(rows);
+  const ABC_RANK = { A: 1, B: 2, C: 3 };
+  for (const r of rows) {
+    r.abcClass = abcMap.get(r.ext) || "C";
+    r.abcRank = ABC_RANK[r.abcClass];
+  }
+
+  const key = state.sortKey === "article" ? "ext" : state.sortKey === "abc" ? "abcRank" : state.sortKey;
   rows.sort((a, b) => {
     let av = a[key], bv = b[key];
     if (av === null || av === undefined) av = -Infinity;
@@ -1242,8 +1270,6 @@ function renderTable() {
     }
   });
 
-  const abcMap = computeABC(rows);
-
   function rowHtml(r) {
     const noCost = !r.has_cost;
     const profitStr = noCost ? "—" : fmtMoney(r.net_profit);
@@ -1253,7 +1279,7 @@ function renderTable() {
     const baseArt = baseArticle(r.ext) || r.ext;
     const savedSeason = (DATA.seasons || {})[baseArt] || "";
     const season = Object.prototype.hasOwnProperty.call(pendingSeasons, baseArt) ? pendingSeasons[baseArt] : savedSeason;
-    const abcClass = abcMap.get(r.ext) || "C";
+    const abcClass = r.abcClass;
     return `<tr class="${noCost ? "no-cost-row" : ""}">
       <td><div class="article">${r.ext}</div><div class="article-sub">${r.name || ""}${r.brand ? " · " + r.brand : ""}${r.sizeCount ? " · " + r.sizeCount + " размер" + pluralArt(r.sizeCount) : ""}</div></td>
       <td><span class="abc-pill abc-${abcClass}">${abcClass}</span></td>
@@ -1385,7 +1411,7 @@ document.getElementById("skuTable").addEventListener("click", e => {
   if (!th) return;
   const key = th.dataset.key;
   if (state.sortKey === key) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
-  else { state.sortKey = key; state.sortDir = "desc"; }
+  else { state.sortKey = key; state.sortDir = key === "abc" ? "asc" : "desc"; }
   renderTable();
 });
 
