@@ -461,6 +461,13 @@
     vertical-align: middle;
   }
   tbody tr:hover td { background: var(--bg-card-hover); }
+  .total-row td {
+    font-weight: 700;
+    border-top: 2px solid var(--border);
+    border-bottom: none;
+    background: var(--bg-card-hover);
+  }
+  .total-row:hover td { background: var(--bg-card-hover); }
   td.num, th.num { text-align: right; font-family: "JBMono", monospace; font-variant-numeric: tabular-nums; }
   .article { font-weight: 700; }
   .article-sub { color: var(--ink-muted); font-size: 11.5px; }
@@ -1102,7 +1109,7 @@ function renderTable() {
     }
   });
 
-  document.getElementById("tableBody").innerHTML = rows.map(r => {
+  const rowsHtml = rows.map(r => {
     const noCost = !r.has_cost;
     const profitStr = noCost ? "—" : fmtMoney(r.net_profit);
     const marginStr = noCost ? "—" : fmtPct(r.net_margin_pct);
@@ -1118,7 +1125,32 @@ function renderTable() {
       <td class="num">${r.stock}</td>
       <td class="num ${r.days_left !== null && r.days_left < 7 ? "neg" : ""}">${daysStr}</td>
     </tr>`;
-  }).join("") || `<tr><td colspan="8" class="empty-note">Ничего не найдено.</td></tr>`;
+  }).join("");
+
+  let totalHtml = "";
+  if (rows.length > 0) {
+    const t = sumRawBuckets(rows);
+    const totalStock = rows.reduce((a, r) => a + (r.stock || 0), 0);
+    const totalAvgDaily = rows.reduce((a, r) => a + (r.avgDaily || 0), 0);
+    const totalDaysLeft = totalAvgDaily > 0 ? Math.round((totalStock / totalAvgDaily) * 10) / 10 : null;
+    const noCost = !t.has_cost;
+    const profitStr = noCost ? "—" : fmtMoney(t.net_profit);
+    const marginStr = noCost ? "—" : fmtPct(t.net_margin_pct);
+    const daysStr = totalDaysLeft === null ? (totalStock > 0 ? "∞" : "—") : totalDaysLeft;
+    const buyoutStr = t.buyout_rate_pct === null ? "—" : fmtPct(t.buyout_rate_pct);
+    totalHtml = `<tr class="total-row">
+      <td>ИТОГО</td>
+      <td class="num">${t.orders_count}</td>
+      <td class="num">${buyoutStr}</td>
+      <td class="num">${fmtMoney(t.revenue)}</td>
+      <td class="num ${!noCost && t.net_profit < 0 ? "neg" : ""}">${profitStr}</td>
+      <td class="num ${!noCost && t.net_margin_pct < 0 ? "neg" : ""}">${marginStr}</td>
+      <td class="num">${totalStock}</td>
+      <td class="num">${daysStr}</td>
+    </tr>`;
+  }
+
+  document.getElementById("tableBody").innerHTML = rowsHtml + totalHtml || `<tr><td colspan="8" class="empty-note">Ничего не найдено.</td></tr>`;
 
   document.getElementById("tableCount").textContent = `${rows.length} артикул${pluralArt(rows.length)}`;
 }
