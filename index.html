@@ -444,6 +444,20 @@
   .pill.warning { background: var(--status-warning-bg); color: var(--status-warning); }
   .pill.good { background: var(--status-good-bg); color: var(--status-good); }
   .pill.neutral { background: var(--border); color: var(--ink-secondary); }
+  .abc-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: "JBMono", monospace;
+  }
+  .abc-pill.abc-A { background: var(--status-good-bg); color: var(--status-good); }
+  .abc-pill.abc-B { background: var(--status-warning-bg); color: var(--status-warning); }
+  .abc-pill.abc-C { background: var(--status-critical-bg); color: var(--status-critical); }
   .empty-note { color: var(--ink-muted); font-size: 12.5px; padding: 8px 4px; }
 
   /* ---- Table ---- */
@@ -606,6 +620,7 @@
         <thead>
           <tr>
             <th data-key="article">Артикул</th>
+            <th title="ABC-анализ по выручке: A — топ ~80% выручки, B — следующие ~15%, C — остальное">ABC</th>
             <th>Сезон</th>
             <th data-key="orders_count" class="num">Заказы</th>
             <th data-key="buyout_rate_pct" class="num">% выкупа</th>
@@ -791,6 +806,19 @@ function seasonSelectHtml(baseArt, season) {
     .join("");
   const changed = Object.prototype.hasOwnProperty.call(pendingSeasons, baseArt);
   return `<select class="season-select${changed ? " changed" : ""}" data-article="${baseArt}">${options}</select>`;
+}
+
+function computeABC(rows) {
+  const sorted = [...rows].sort((a, b) => (b.revenue || 0) - (a.revenue || 0));
+  const total = sorted.reduce((a, r) => a + (r.revenue || 0), 0);
+  const map = new Map();
+  let cum = 0;
+  for (const r of sorted) {
+    cum += r.revenue || 0;
+    const pct = total > 0 ? (cum / total) * 100 : 100;
+    map.set(r.ext, pct <= 80 ? "A" : pct <= 95 ? "B" : "C");
+  }
+  return map;
 }
 
 function updateSeasonSavebar() {
@@ -1214,6 +1242,8 @@ function renderTable() {
     }
   });
 
+  const abcMap = computeABC(rows);
+
   function rowHtml(r) {
     const noCost = !r.has_cost;
     const profitStr = noCost ? "—" : fmtMoney(r.net_profit);
@@ -1223,8 +1253,10 @@ function renderTable() {
     const baseArt = baseArticle(r.ext) || r.ext;
     const savedSeason = (DATA.seasons || {})[baseArt] || "";
     const season = Object.prototype.hasOwnProperty.call(pendingSeasons, baseArt) ? pendingSeasons[baseArt] : savedSeason;
+    const abcClass = abcMap.get(r.ext) || "C";
     return `<tr class="${noCost ? "no-cost-row" : ""}">
       <td><div class="article">${r.ext}</div><div class="article-sub">${r.name || ""}${r.brand ? " · " + r.brand : ""}${r.sizeCount ? " · " + r.sizeCount + " размер" + pluralArt(r.sizeCount) : ""}</div></td>
+      <td><span class="abc-pill abc-${abcClass}">${abcClass}</span></td>
       <td>${seasonSelectHtml(baseArt, season)}</td>
       <td class="num">${r.orders_count}</td>
       <td class="num ${r.buyout_rate_pct !== null && r.buyout_rate_pct < 30 ? "neg" : ""}">${buyoutStr}</td>
@@ -1250,7 +1282,7 @@ function renderTable() {
       const isOpen = expandedCategories.has(cat);
       const catTotal = sumRawBuckets(items);
       const header = `<tr class="category-row${isOpen ? " open" : ""}" data-category="${cat}">
-        <td colspan="9"><span class="arrow">▶</span>${cat}<span class="muted-count">${items.length} артикул${pluralArt(items.length)} · ${fmtMoney(catTotal.revenue)} ₽</span></td>
+        <td colspan="10"><span class="arrow">▶</span>${cat}<span class="muted-count">${items.length} артикул${pluralArt(items.length)} · ${fmtMoney(catTotal.revenue)} ₽</span></td>
       </tr>`;
       const body = isOpen ? items.map(rowHtml).join("") : "";
       return header + body;
@@ -1273,6 +1305,7 @@ function renderTable() {
     totalHtml = `<tr class="total-row">
       <td>ИТОГО</td>
       <td></td>
+      <td></td>
       <td class="num">${t.orders_count}</td>
       <td class="num">${buyoutStr}</td>
       <td class="num">${fmtMoney(t.revenue)}</td>
@@ -1283,7 +1316,7 @@ function renderTable() {
     </tr>`;
   }
 
-  document.getElementById("tableBody").innerHTML = rowsHtml + totalHtml || `<tr><td colspan="9" class="empty-note">Ничего не найдено.</td></tr>`;
+  document.getElementById("tableBody").innerHTML = rowsHtml + totalHtml || `<tr><td colspan="10" class="empty-note">Ничего не найдено.</td></tr>`;
 
   document.getElementById("tableCount").textContent = `${rows.length} артикул${pluralArt(rows.length)}`;
 }
