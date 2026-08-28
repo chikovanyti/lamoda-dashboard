@@ -842,14 +842,24 @@ function articleHistoryRowHtml(baseArt, colspan) {
   const body = hist.length === 0
     ? `<div class="empty-note">Нет продаж по дням для этого артикула.</div>`
     : `<table class="history-table">
-        <thead><tr><th>Дата</th><th class="num">Заказы</th><th class="num">Продано, шт</th><th class="num">Выручка ₽</th><th class="num">Цена продажи ₽</th></tr></thead>
-        <tbody>${hist.map(h => `<tr>
+        <thead><tr>
+          <th>Дата</th><th class="num">Заказы</th><th class="num">% выкупа</th><th class="num">Продано, шт</th>
+          <th class="num">Выручка ₽</th><th class="num">Цена продажи ₽</th>
+          <th class="num">Прибыль чистая ₽</th><th class="num">Маржа чистая %</th>
+        </tr></thead>
+        <tbody>${hist.map(h => {
+          const noCost = !h.has_cost;
+          return `<tr>
           <td>${fmtDayLabel(h.date)}</td>
           <td class="num">${h.orders_count}</td>
+          <td class="num">${h.buyout_rate_pct !== null ? fmtPct(h.buyout_rate_pct) : "—"}</td>
           <td class="num">${h.units}</td>
           <td class="num">${fmtMoney(h.revenue)}</td>
           <td class="num">${h.avg_price !== null ? fmtMoney(h.avg_price) : "—"}</td>
-        </tr>`).join("")}</tbody>
+          <td class="num ${!noCost && h.net_profit < 0 ? "neg" : ""}">${noCost ? "—" : fmtMoney(h.net_profit)}</td>
+          <td class="num ${!noCost && h.net_margin_pct < 0 ? "neg" : ""}">${noCost ? "—" : fmtPct(h.net_margin_pct)}</td>
+        </tr>`;
+        }).join("")}</tbody>
       </table>`;
   return `<tr class="article-history-row"><td colspan="${colspan}"><div class="history-wrap">${body}</div></td></tr>`;
 }
