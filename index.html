@@ -831,7 +831,7 @@ function getArticleDailyHistory(baseArt) {
     }
     if (buckets.length === 0) continue;
     const summed = sumRawBuckets(buckets);
-    if (!summed.revenue && !summed.units && !summed.ordered_units) continue;
+    if (!summed.units) continue;
     out.push({ date: d, ...summed, avg_price: summed.units > 0 ? summed.revenue / summed.units : null });
   }
   return out.reverse();
