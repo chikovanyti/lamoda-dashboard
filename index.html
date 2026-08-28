@@ -260,18 +260,8 @@
     border-radius: 6px;
   }
   select.season-select.changed { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .season-savebar {
-    display: none;
-    align-items: center;
-    gap: 10px;
-    margin: -2px 0 10px;
-    padding: 10px 12px;
-    background: var(--bg-card-hover);
-    border: 1px solid var(--border-strong);
-    border-radius: 8px;
-    font-size: 12.5px;
-  }
-  .season-savebar.visible { display: flex; }
+  .season-cell { display: flex; align-items: center; gap: 6px; }
+  .season-ok-btn { padding: 5px 10px; font-size: 11.5px; }
 
   .spacer { flex: 1; }
 
@@ -622,17 +612,10 @@
       <input type="search" id="searchBox" placeholder="Поиск по артикулу или названию…" style="margin-left:8px;min-width:220px;" />
     </div>
     <div class="foot-note" style="margin:-2px 0 10px;">
-      Выберите сезон в выпадающем списке напротив артикула (Зима / Демисезон / Лето) — выбор запоминается в этом
-      браузере сразу. Но чтобы он окончательно сохранился в отчёте и был виден коллеге — нажмите
-      «Скопировать изменения» и пришлите сюда в чат, я сохраню на сервере.
+      Выберите сезон в выпадающем списке напротив артикула (Зима / Демисезон / Лето) и нажмите «OK» у этой строки —
+      скопируется только она. Присылайте мне сюда в чат по одной (или несколько сразу) — я сохраню и подтяну в отчёт.
     </div>
-    <div class="season-savebar" id="seasonSavebar">
-      <span id="seasonSavebarText"></span>
-      <button class="btn-outline" id="seasonSaveBtn" style="padding:5px 12px;">Скопировать изменения</button>
-      <span class="spacer"></span>
-      <span class="muted">Пришлите скопированное сюда в чат — я сохраню.</span>
-    </div>
-    <textarea id="seasonCopyFallback" readonly style="display:none;width:100%;margin-bottom:10px;padding:10px;font-family:'JBMono',monospace;font-size:12.5px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg-card);color:var(--ink-primary);" rows="3"></textarea>
+    <textarea id="seasonCopyFallback" readonly style="display:none;width:100%;margin-bottom:10px;padding:10px;font-family:'JBMono',monospace;font-size:12.5px;border-radius:8px;border:1px solid var(--border-strong);background:var(--bg-card);color:var(--ink-primary);" rows="2"></textarea>
     <div class="table-scroll">
       <table id="skuTable">
         <thead>
@@ -896,7 +879,10 @@ function seasonSelectHtml(baseArt, season) {
     .map(([v, label]) => `<option value="${v}" ${v === season ? "selected" : ""}>${label}</option>`)
     .join("");
   const changed = Object.prototype.hasOwnProperty.call(pendingSeasons, baseArt);
-  return `<select class="season-select${changed ? " changed" : ""}" data-article="${baseArt}">${options}</select>`;
+  return `<span class="season-cell">
+    <select class="season-select${changed ? " changed" : ""}" data-article="${baseArt}">${options}</select>
+    <button class="season-ok-btn btn-outline" data-article="${baseArt}">OK</button>
+  </span>`;
 }
 
 function computeABC(rows) {
@@ -910,13 +896,6 @@ function computeABC(rows) {
     map.set(r.ext, pct <= 80 ? "A" : pct <= 95 ? "B" : "C");
   }
   return map;
-}
-
-function updateSeasonSavebar() {
-  const n = Object.keys(pendingSeasons).length;
-  const bar = document.getElementById("seasonSavebar");
-  document.getElementById("seasonSavebarText").textContent = `Изменено сезонов: ${n}`;
-  bar.classList.toggle("visible", n > 0);
 }
 
 function sortedPeriodKeys(level) {
@@ -1203,27 +1182,34 @@ document.getElementById("tableBody").addEventListener("change", (e) => {
     sel.classList.add("changed");
   }
   savePendingSeasons();
-  updateSeasonSavebar();
 });
 
-document.getElementById("seasonSaveBtn").addEventListener("click", async () => {
-  const lines = Object.entries(pendingSeasons).filter(([, v]) => v).map(([art, v]) => `${art}=${v}`);
-  if (lines.length === 0) return;
-  const text = lines.join("\n");
+document.getElementById("tableBody").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".season-ok-btn");
+  if (!btn) return;
+  const cell = btn.closest(".season-cell");
+  const sel = cell.querySelector(".season-select");
+  const v = sel.value;
+  if (!v) {
+    btn.textContent = "Выберите сезон";
+    setTimeout(() => { btn.textContent = "OK"; }, 1500);
+    return;
+  }
+  const line = `${btn.dataset.article}=${v}`;
   const fallback = document.getElementById("seasonCopyFallback");
-  const btn = document.getElementById("seasonSaveBtn");
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(line);
     btn.textContent = "✓ Скопировано";
+    sel.disabled = true;
     fallback.style.display = "none";
   } catch (err) {
-    fallback.value = text;
+    fallback.value = line;
     fallback.style.display = "block";
     fallback.focus();
     fallback.select();
     btn.textContent = "См. ниже";
+    setTimeout(() => { btn.textContent = "OK"; }, 2200);
   }
-  setTimeout(() => { btn.textContent = "Скопировать изменения"; }, 2200);
 });
 
 function renderPayouts() {
@@ -1601,5 +1587,4 @@ renderStockAlerts();
 renderPayouts();
 renderNoCost();
 renderAll();
-updateSeasonSavebar();
 </script>
