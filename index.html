@@ -623,8 +623,9 @@
       <button class="btn-outline" id="categoryGroupToggle" style="padding:6px 12px;margin-left:8px;">Группировать по типу</button>
     </div>
     <div class="foot-note" style="margin:-2px 0 10px;">
-      Выберите сезон в выпадающем списке напротив артикула (Зима / Демисезон / Лето). Когда закончите — нажмите
-      «Скопировать изменения» и пришлите сюда в чат, я сохраню.
+      Выберите сезон в выпадающем списке напротив артикула (Зима / Демисезон / Лето) — выбор запоминается в этом
+      браузере сразу. Но чтобы он окончательно сохранился в отчёте и был виден коллеге — нажмите
+      «Скопировать изменения» и пришлите сюда в чат, я сохраню на сервере.
     </div>
     <div class="season-savebar" id="seasonSavebar">
       <span id="seasonSavebarText"></span>
@@ -815,7 +816,34 @@ function weeklyOverall(endDateStr) {
 }
 
 const state = { level: "daily", periodKey: null, search: "", sortKey: "revenue", sortDir: "desc", groupBy: "article", chartRange: { from: null, to: null }, categoryGroup: false };
-const pendingSeasons = {};
+const SEASON_STORAGE_KEY = "lamoda_pending_seasons_v1";
+
+// Selecting a season here doesn't write to the server directly (this is a static page) --
+// the user has to copy the changes and paste them into chat so they get saved into the
+// database and baked into tomorrow's data. Without this, picking a season and reloading the
+// page (or the daily auto-refresh landing) before that round-trip completes would silently
+// wipe the selection, which read as "сохранение не работает". Persist to localStorage on
+// every change so it survives reloads, and drop an entry once DATA.seasons (the server-
+// confirmed value from the next rebuild) agrees with it -- no need to keep it "pending" then.
+function loadPendingSeasons() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SEASON_STORAGE_KEY) || "{}");
+    const confirmed = DATA.seasons || {};
+    const stillPending = {};
+    for (const [art, season] of Object.entries(saved)) {
+      if (confirmed[art] !== season) stillPending[art] = season;
+    }
+    localStorage.setItem(SEASON_STORAGE_KEY, JSON.stringify(stillPending));
+    return stillPending;
+  } catch (err) {
+    return {};
+  }
+}
+function savePendingSeasons() {
+  try { localStorage.setItem(SEASON_STORAGE_KEY, JSON.stringify(pendingSeasons)); } catch (err) {}
+}
+
+const pendingSeasons = loadPendingSeasons();
 const expandedCategories = new Set();
 const expandedArticleRows = new Set();
 
@@ -1175,6 +1203,7 @@ document.getElementById("tableBody").addEventListener("change", (e) => {
     pendingSeasons[art] = sel.value;
     sel.classList.add("changed");
   }
+  savePendingSeasons();
   updateSeasonSavebar();
 });
 
@@ -1573,4 +1602,5 @@ renderStockAlerts();
 renderPayouts();
 renderNoCost();
 renderAll();
+updateSeasonSavebar();
 </script>
