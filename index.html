@@ -494,6 +494,24 @@
     vertical-align: middle;
   }
   tbody tr:hover td { background: var(--bg-card-hover); }
+  .row-expand-arrow {
+    cursor: pointer;
+    display: inline-block;
+    margin-right: 6px;
+    font-size: 9px;
+    color: var(--ink-muted);
+    transition: transform 0.15s ease;
+  }
+  .row-expand-arrow.open { transform: rotate(90deg); }
+  .article-history-row td { background: var(--bg-card-hover); padding: 0; border-bottom: 1px solid var(--border); }
+  .history-wrap { padding: 10px 16px 14px 34px; max-height: 320px; overflow-y: auto; }
+  table.history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.history-table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--ink-muted); font-weight: 700; padding: 5px 8px; position: sticky; top: 0; background: var(--bg-card-hover);
+  }
+  table.history-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  table.history-table th.num, table.history-table td.num { text-align: right; font-family: "JBMono", monospace; font-variant-numeric: tabular-nums; }
   .category-row td {
     cursor: pointer;
     font-weight: 700;
@@ -625,6 +643,7 @@
             <th data-key="orders_count" class="num">Заказы</th>
             <th data-key="buyout_rate_pct" class="num">% выкупа</th>
             <th data-key="revenue" class="num">Выручка ₽</th>
+            <th data-key="avg_price" class="num" title="Средняя цена продажи (выручка / выкупленные шт.) — цена, по которой фактически считается выручка">Цена продажи ₽</th>
             <th data-key="net_profit" class="num">Прибыль чистая ₽</th>
             <th data-key="net_margin_pct" class="num">Маржа чистая %</th>
             <th data-key="stock" class="num">Остаток</th>
@@ -798,6 +817,42 @@ function weeklyOverall(endDateStr) {
 const state = { level: "daily", periodKey: null, search: "", sortKey: "revenue", sortDir: "desc", groupBy: "article", chartRange: { from: null, to: null }, categoryGroup: false };
 const pendingSeasons = {};
 const expandedCategories = new Set();
+const expandedArticleRows = new Set();
+
+function getArticleDailyHistory(baseArt) {
+  const dates = Object.keys(DATA.daily.by_sku).sort();
+  const out = [];
+  for (const d of dates) {
+    const daySkus = DATA.daily.by_sku[d];
+    const buckets = [];
+    for (const sku in daySkus) {
+      const ext = articleLabel(sku).ext;
+      if ((baseArticle(ext) || ext) === baseArt) buckets.push(daySkus[sku]);
+    }
+    if (buckets.length === 0) continue;
+    const summed = sumRawBuckets(buckets);
+    if (!summed.revenue && !summed.units && !summed.ordered_units) continue;
+    out.push({ date: d, ...summed, avg_price: summed.units > 0 ? summed.revenue / summed.units : null });
+  }
+  return out.reverse();
+}
+
+function articleHistoryRowHtml(baseArt, colspan) {
+  const hist = getArticleDailyHistory(baseArt);
+  const body = hist.length === 0
+    ? `<div class="empty-note">Нет продаж по дням для этого артикула.</div>`
+    : `<table class="history-table">
+        <thead><tr><th>Дата</th><th class="num">Заказы</th><th class="num">Продано, шт</th><th class="num">Выручка ₽</th><th class="num">Цена продажи ₽</th></tr></thead>
+        <tbody>${hist.map(h => `<tr>
+          <td>${fmtDayLabel(h.date)}</td>
+          <td class="num">${h.orders_count}</td>
+          <td class="num">${h.units}</td>
+          <td class="num">${fmtMoney(h.revenue)}</td>
+          <td class="num">${h.avg_price !== null ? fmtMoney(h.avg_price) : "—"}</td>
+        </tr>`).join("")}</tbody>
+      </table>`;
+  return `<tr class="article-history-row"><td colspan="${colspan}"><div class="history-wrap">${body}</div></td></tr>`;
+}
 const SEASON_LABELS = { "": "—", "зима": "Зима", "демисезон": "Демисезон", "лето": "Лето" };
 
 function seasonSelectHtml(baseArt, season) {
@@ -1251,6 +1306,7 @@ function renderTable() {
   for (const r of rows) {
     r.abcClass = abcMap.get(r.ext) || "C";
     r.abcRank = ABC_RANK[r.abcClass];
+    r.avg_price = r.units > 0 ? r.revenue / r.units : null;
   }
 
   const key = state.sortKey === "article" ? "ext" : state.sortKey === "abc" ? "abcRank" : state.sortKey;
@@ -1280,18 +1336,22 @@ function renderTable() {
     const savedSeason = (DATA.seasons || {})[baseArt] || "";
     const season = Object.prototype.hasOwnProperty.call(pendingSeasons, baseArt) ? pendingSeasons[baseArt] : savedSeason;
     const abcClass = r.abcClass;
-    return `<tr class="${noCost ? "no-cost-row" : ""}">
-      <td><div class="article">${r.ext}</div><div class="article-sub">${r.name || ""}${r.brand ? " · " + r.brand : ""}${r.sizeCount ? " · " + r.sizeCount + " размер" + pluralArt(r.sizeCount) : ""}</div></td>
+    const priceStr = r.avg_price !== null ? fmtMoney(r.avg_price) : "—";
+    const isOpen = expandedArticleRows.has(baseArt);
+    const rowHead = `<tr class="${noCost ? "no-cost-row" : ""}">
+      <td><span class="row-expand-arrow${isOpen ? " open" : ""}" data-toggle-article="${baseArt}">▶</span><div class="article" style="display:inline-block;">${r.ext}</div><div class="article-sub">${r.name || ""}${r.brand ? " · " + r.brand : ""}${r.sizeCount ? " · " + r.sizeCount + " размер" + pluralArt(r.sizeCount) : ""}</div></td>
       <td><span class="abc-pill abc-${abcClass}">${abcClass}</span></td>
       <td>${seasonSelectHtml(baseArt, season)}</td>
       <td class="num">${r.orders_count}</td>
       <td class="num ${r.buyout_rate_pct !== null && r.buyout_rate_pct < 30 ? "neg" : ""}">${buyoutStr}</td>
       <td class="num">${fmtMoney(r.revenue)}</td>
+      <td class="num">${priceStr}</td>
       <td class="num ${!noCost && r.net_profit < 0 ? "neg" : ""}">${profitStr}</td>
       <td class="num ${!noCost && r.net_margin_pct < 0 ? "neg" : ""}">${marginStr}</td>
       <td class="num">${r.stock}</td>
       <td class="num ${r.days_left !== null && r.days_left < 7 ? "neg" : ""}">${daysStr}</td>
     </tr>`;
+    return rowHead + (isOpen ? articleHistoryRowHtml(baseArt, 11) : "");
   }
 
   let rowsHtml;
@@ -1308,7 +1368,7 @@ function renderTable() {
       const isOpen = expandedCategories.has(cat);
       const catTotal = sumRawBuckets(items);
       const header = `<tr class="category-row${isOpen ? " open" : ""}" data-category="${cat}">
-        <td colspan="10"><span class="arrow">▶</span>${cat}<span class="muted-count">${items.length} артикул${pluralArt(items.length)} · ${fmtMoney(catTotal.revenue)} ₽</span></td>
+        <td colspan="11"><span class="arrow">▶</span>${cat}<span class="muted-count">${items.length} артикул${pluralArt(items.length)} · ${fmtMoney(catTotal.revenue)} ₽</span></td>
       </tr>`;
       const body = isOpen ? items.map(rowHtml).join("") : "";
       return header + body;
@@ -1335,6 +1395,7 @@ function renderTable() {
       <td class="num">${t.orders_count}</td>
       <td class="num">${buyoutStr}</td>
       <td class="num">${fmtMoney(t.revenue)}</td>
+      <td class="num">${t.units > 0 ? fmtMoney(t.revenue / t.units) : "—"}</td>
       <td class="num ${!noCost && t.net_profit < 0 ? "neg" : ""}">${profitStr}</td>
       <td class="num ${!noCost && t.net_margin_pct < 0 ? "neg" : ""}">${marginStr}</td>
       <td class="num">${totalStock}</td>
@@ -1342,7 +1403,7 @@ function renderTable() {
     </tr>`;
   }
 
-  document.getElementById("tableBody").innerHTML = rowsHtml + totalHtml || `<tr><td colspan="10" class="empty-note">Ничего не найдено.</td></tr>`;
+  document.getElementById("tableBody").innerHTML = rowsHtml + totalHtml || `<tr><td colspan="11" class="empty-note">Ничего не найдено.</td></tr>`;
 
   document.getElementById("tableCount").textContent = `${rows.length} артикул${pluralArt(rows.length)}`;
 }
@@ -1391,6 +1452,14 @@ document.getElementById("categoryGroupToggle").addEventListener("click", e => {
   renderTable();
 });
 document.getElementById("tableBody").addEventListener("click", e => {
+  const arrow = e.target.closest(".row-expand-arrow");
+  if (arrow) {
+    const art = arrow.dataset.toggleArticle;
+    if (expandedArticleRows.has(art)) expandedArticleRows.delete(art);
+    else expandedArticleRows.add(art);
+    renderTable();
+    return;
+  }
   const row = e.target.closest(".category-row");
   if (!row) return;
   const cat = row.dataset.category;
