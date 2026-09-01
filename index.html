@@ -477,6 +477,28 @@
     user-select: none;
   }
   thead th.sorted { color: var(--accent); }
+  .filter-row th {
+    padding: 4px 6px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-strong);
+    cursor: default;
+    font-weight: 400;
+  }
+  .filter-row select.col-filter {
+    width: 100%;
+    padding: 4px 4px;
+    font-size: 11px;
+    border-radius: 5px;
+  }
+  .range-filter { display: flex; gap: 3px; justify-content: flex-end; }
+  .range-filter input.col-filter {
+    width: 42px;
+    padding: 4px 3px;
+    font-size: 11px;
+    border-radius: 5px;
+    text-align: right;
+    font-family: "JBMono", monospace;
+  }
   thead th .arrow { font-size: 9px; margin-left: 3px; }
   tbody td {
     padding: 9px 10px;
@@ -631,6 +653,37 @@
             <th data-key="net_margin_pct" class="num">Маржа чистая %</th>
             <th data-key="stock" class="num">Остаток</th>
             <th data-key="days_left" class="num">Остаток на кол-во дней</th>
+          </tr>
+          <tr class="filter-row" id="filterRow">
+            <th></th>
+            <th>
+              <select class="col-filter" data-filter="abc">
+                <option value="">Все</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+              </select>
+            </th>
+            <th>
+              <select class="col-filter" data-filter="season">
+                <option value="">Все</option>
+                <option value="зима">Зима</option>
+                <option value="демисезон">Демисезон</option>
+                <option value="лето">Лето</option>
+                <option value="none">Без сезона</option>
+              </select>
+            </th>
+            <th class="num"><span class="range-filter"><input type="number" class="col-filter" data-filter="orders_min" placeholder="от"><input type="number" class="col-filter" data-filter="orders_max" placeholder="до"></span></th>
+            <th class="num"><span class="range-filter"><input type="number" class="col-filter" data-filter="buyout_min" placeholder="от"><input type="number" class="col-filter" data-filter="buyout_max" placeholder="до"></span></th>
+            <th class="num"><span class="range-filter"><input type="number" class="col-filter" data-filter="revenue_min" placeholder="от"><input type="number" class="col-filter" data-filter="revenue_max" placeholder="до"></span></th>
+            <th class="num"><span class="range-filter"><input type="number" class="col-filter" data-filter="price_min" placeholder="от"><input type="number" class="col-filter" data-filter="price_max" placeholder="до"></span></th>
+            <th class="num"><span class="range-filter"><input type="number" class="col-filter" data-filter="profit_min" placeholder="от"><input type="number" class="col-filter" data-filter="profit_max" placeholder="до"></span></th>
+            <th class="num"><span class="range-filter"><input type="number" class="col-filter" data-filter="margin_min" placeholder="от"><input type="number" class="col-filter" data-filter="margin_max" placeholder="до"></span></th>
+            <th class="num"><span class="range-filter"><input type="number" class="col-filter" data-filter="stock_min" placeholder="от"><input type="number" class="col-filter" data-filter="stock_max" placeholder="до"></span></th>
+            <th class="num">
+              <span class="range-filter"><input type="number" class="col-filter" data-filter="days_min" placeholder="от"><input type="number" class="col-filter" data-filter="days_max" placeholder="до"></span>
+              <button class="btn-outline" id="resetFiltersBtn" title="Сбросить все фильтры" style="padding:3px 8px;font-size:11px;margin-left:4px;">✕</button>
+            </th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -797,7 +850,32 @@ function weeklyOverall(endDateStr) {
   return sumRawBuckets(dates.map(d => DATA.daily.overall[d]));
 }
 
-const state = { level: "daily", periodKey: null, search: "", sortKey: "revenue", sortDir: "desc", groupBy: "article", chartRange: { from: null, to: null }, categoryGroup: false };
+const state = { level: "daily", periodKey: null, search: "", sortKey: "revenue", sortDir: "desc", groupBy: "article", chartRange: { from: null, to: null }, categoryGroup: false, filters: {} };
+
+// Maps each range/select filter key to the row field it tests against, and (for range
+// filters) whether it's the min or max side of the range.
+const FILTER_FIELD_MAP = {
+  orders: "orders_count", buyout: "buyout_rate_pct", revenue: "revenue", price: "avg_price",
+  profit: "net_profit", margin: "net_margin_pct", stock: "stock", days: "days_left",
+};
+
+function rowPassesFilters(r) {
+  const f = state.filters;
+  if (f.abc && r.abcClass !== f.abc) return false;
+  if (f.season) {
+    const s = (DATA.seasons || {})[r._baseArt] || "";
+    if (f.season === "none" ? s !== "" : s !== f.season) return false;
+  }
+  for (const [prefix, field] of Object.entries(FILTER_FIELD_MAP)) {
+    const min = f[prefix + "_min"];
+    const max = f[prefix + "_max"];
+    if (min === undefined && max === undefined) continue;
+    const v = r[field];
+    if (min !== undefined && (v === null || v === undefined || v < min)) return false;
+    if (max !== undefined && (v === null || v === undefined || v > max)) return false;
+  }
+  return true;
+}
 const SEASON_STORAGE_KEY = "lamoda_pending_seasons_v1";
 
 // Selecting a season here doesn't write to the server directly (this is a static page) --
@@ -1339,7 +1417,9 @@ function renderTable() {
     r.abcClass = abcMap.get(r.ext) || "C";
     r.abcRank = ABC_RANK[r.abcClass];
     r.avg_price = r.units > 0 ? r.revenue / r.units : null;
+    r._baseArt = r.sku ? canonicalBaseArticle(r.sku, r.ext) : r.ext;
   }
+  rows = rows.filter(rowPassesFilters);
 
   const key = state.sortKey === "article" ? "ext" : state.sortKey === "abc" ? "abcRank" : state.sortKey;
   rows.sort((a, b) => {
@@ -1364,7 +1444,7 @@ function renderTable() {
     const marginStr = noCost ? "—" : fmtPct(r.net_margin_pct);
     const daysStr = r.days_left === null ? (r.stock > 0 ? "∞" : "—") : r.days_left;
     const buyoutStr = r.buyout_rate_pct === null ? "—" : fmtPct(r.buyout_rate_pct);
-    const baseArt = r.sku ? canonicalBaseArticle(r.sku, r.ext) : r.ext;
+    const baseArt = r._baseArt;
     const savedSeason = (DATA.seasons || {})[baseArt] || "";
     const season = Object.prototype.hasOwnProperty.call(pendingSeasons, baseArt) ? pendingSeasons[baseArt] : savedSeason;
     const abcClass = r.abcClass;
@@ -1508,11 +1588,32 @@ document.getElementById("searchBox").addEventListener("input", e => {
   renderTable();
 });
 document.getElementById("skuTable").addEventListener("click", e => {
+  if (e.target.closest(".filter-row")) return;
   const th = e.target.closest("th");
-  if (!th) return;
+  if (!th || !th.dataset.key) return;
   const key = th.dataset.key;
   if (state.sortKey === key) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
   else { state.sortKey = key; state.sortDir = key === "abc" ? "asc" : "desc"; }
+  renderTable();
+});
+
+function handleColFilterInput(e) {
+  const el = e.target.closest(".col-filter");
+  if (!el) return;
+  const key = el.dataset.filter;
+  if (el.tagName === "SELECT") {
+    if (el.value) state.filters[key] = el.value; else delete state.filters[key];
+  } else {
+    const n = parseFloat(el.value);
+    if (el.value !== "" && !Number.isNaN(n)) state.filters[key] = n; else delete state.filters[key];
+  }
+  renderTable();
+}
+document.getElementById("filterRow").addEventListener("input", handleColFilterInput);
+document.getElementById("filterRow").addEventListener("change", handleColFilterInput);
+document.getElementById("resetFiltersBtn").addEventListener("click", () => {
+  state.filters = {};
+  document.querySelectorAll("#filterRow .col-filter").forEach(el => { el.value = ""; });
   renderTable();
 });
 
