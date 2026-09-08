@@ -244,15 +244,17 @@
   }
   input.cost-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-  select, input[type="search"], input[type="date"] {
+  select, input[type="search"], input[type="date"], input[type="number"] {
     font: inherit;
     color: var(--ink-primary);
     background: var(--bg-card);
     border: 1px solid var(--border-strong);
     border-radius: 8px;
     padding: 8px 12px;
+    box-shadow: none;
   }
-  select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type="number"] { appearance: textfield; -webkit-appearance: textfield; }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: none; }
 
   select.season-select {
     padding: 5px 8px;
