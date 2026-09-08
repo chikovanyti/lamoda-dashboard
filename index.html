@@ -1243,7 +1243,7 @@ document.getElementById("noCostBody").addEventListener("click", async (e) => {
   const fallback = document.getElementById("copyFallback");
   try {
     await navigator.clipboard.writeText(line);
-    btn.textContent = "✓ Скопировано";
+    btn.textContent = "✓ Сохранено";
     input.disabled = true;
     row.style.opacity = "0.55";
     fallback.style.display = "none";
@@ -1287,7 +1287,7 @@ document.getElementById("tableBody").addEventListener("click", async (e) => {
   const fallback = document.getElementById("seasonCopyFallback");
   try {
     await navigator.clipboard.writeText(line);
-    btn.textContent = "✓ Скопировано";
+    btn.textContent = "✓ Сохранено";
     sel.disabled = true;
     fallback.style.display = "none";
   } catch (err) {
