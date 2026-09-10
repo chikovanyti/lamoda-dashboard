@@ -573,7 +573,10 @@
       <div class="sub">Финансовый отчёт: выручка, заказы, остатки, прибыль и маржа по артикулам</div>
     </div>
     <div class="meta-block">
-      <button id="refreshBtn" class="btn-outline"><span class="refresh-icon">↻</span> Обновить</button>
+      <div style="display:flex;gap:8px;">
+        <a href="ads.html" class="btn-outline" style="text-decoration:none;">📢 Реклама</a>
+        <button id="refreshBtn" class="btn-outline"><span class="refresh-icon">↻</span> Обновить</button>
+      </div>
       <div class="meta" id="metaInfo"></div>
     </div>
   </div>
@@ -620,32 +623,6 @@
     <div class="card">
       <h2>Остатки — требуют внимания</h2>
       <div class="stock-list" id="stockList"></div>
-    </div>
-  </div>
-
-  <div class="card table-card">
-    <div class="table-head-row">
-      <h2>Рекомендации к рекламе</h2>
-      <span class="muted" id="adRecoCaption" style="font-size:12.5px"></span>
-    </div>
-    <div class="foot-note" style="margin:-2px 0 10px;">
-      Автоматический подбор по всей истории: хорошая маржа + доказанные продажи + запас товара
-      больше ~месяца (то есть деньги просто лежат на складе — реклама поможет их разогнать). Быстро
-      продающееся (остаток меньше чем на 21 день) и убыточное сюда не попадает намеренно.
-    </div>
-    <div class="table-scroll" style="max-height:420px;">
-      <table id="adRecoTable">
-        <thead>
-          <tr>
-            <th>Артикул</th>
-            <th class="num">Маржа чистая %</th>
-            <th class="num">Выручка ₽ (всего)</th>
-            <th class="num">Остаток</th>
-            <th class="num">Запас, дней</th>
-          </tr>
-        </thead>
-        <tbody id="adRecoBody"></tbody>
-      </table>
     </div>
   </div>
 
@@ -1395,38 +1372,6 @@ function renderStockAlerts() {
   }).join("");
 }
 
-function renderAdRecommendations() {
-  const rows = buildTotalArticleRows().filter(r =>
-    r.has_cost &&
-    r.units > 0 &&
-    r.net_margin_pct !== null && r.net_margin_pct >= 15 &&
-    r.days_left !== null && r.days_left >= 21
-  );
-  rows.forEach(r => {
-    // Margin is the main driver, but weight it by how much excess stock needs moving
-    // (capped so a near-infinite days_left doesn't dominate the ranking on its own).
-    r.adScore = r.net_margin_pct * Math.min(r.days_left / 30, 6);
-  });
-  rows.sort((a, b) => b.adScore - a.adScore);
-  const top = rows.slice(0, 20);
-
-  document.getElementById("adRecoCaption").textContent = `${top.length} кандидат${top.length === 1 ? "" : top.length < 5 ? "а" : "ов"}`;
-  const body = document.getElementById("adRecoBody");
-  if (top.length === 0) {
-    body.innerHTML = `<tr><td colspan="5" class="empty-note">Нет артикулов, подходящих под критерии (маржа ≥15% + запас на 21+ дней + известная себестоимость).</td></tr>`;
-    return;
-  }
-  body.innerHTML = top.map(r => `
-    <tr>
-      <td><div class="article">${r.ext}</div><div class="article-sub">${r.name || ""}${r.brand ? " · " + r.brand : ""}</div></td>
-      <td class="num">${fmtPct(r.net_margin_pct)}</td>
-      <td class="num">${fmtMoney(r.revenue)}</td>
-      <td class="num">${r.stock}</td>
-      <td class="num">${r.days_left}</td>
-    </tr>
-  `).join("");
-}
-
 function groupRowsByArticle(rows) {
   const groups = {};
   for (const r of rows) {
@@ -1756,6 +1701,5 @@ buildChart();
 renderStockAlerts();
 renderPayouts();
 renderNoCost();
-renderAdRecommendations();
 renderAll();
 </script>
