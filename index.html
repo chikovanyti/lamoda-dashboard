@@ -914,6 +914,34 @@ function savePendingSeasons() {
 }
 
 const pendingSeasons = loadPendingSeasons();
+
+const COST_STORAGE_KEY = "lamoda_pending_costs_v1";
+
+// Same problem as pendingSeasons above, for the cost-input panel: typing a price and
+// clicking OK only copies it to the clipboard, it isn't saved anywhere until it's pasted
+// into chat and I run it through set_manual_costs.py -- a reload before that lost the typed
+// value entirely, which read as "сохранение не работает". Persist {article: {value, confirmed}}
+// to localStorage on every keystroke and OK click; drop an entry once the article no longer
+// needs a cost at all (DATA.known_costs picked it up from the next rebuild).
+function loadPendingCosts() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COST_STORAGE_KEY) || "{}");
+    const known = DATA.known_costs || {};
+    const stillPending = {};
+    for (const [art, entry] of Object.entries(saved)) {
+      if (!(art in known)) stillPending[art] = entry;
+    }
+    localStorage.setItem(COST_STORAGE_KEY, JSON.stringify(stillPending));
+    return stillPending;
+  } catch (err) {
+    return {};
+  }
+}
+function savePendingCosts() {
+  try { localStorage.setItem(COST_STORAGE_KEY, JSON.stringify(pendingCosts)); } catch (err) {}
+}
+
+const pendingCosts = loadPendingCosts();
 const expandedCategories = new Set();
 const expandedArticleRows = new Set();
 
@@ -1221,16 +1249,30 @@ function renderNoCost() {
     body.innerHTML = `<tr><td colspan="5" class="empty-note">Себестоимость известна для всех продающихся артикулов.</td></tr>`;
     return;
   }
-  body.innerHTML = rows.map(r => `
-    <tr data-row-article="${r.ext}">
+  body.innerHTML = rows.map(r => {
+    const pending = pendingCosts[r.ext];
+    const value = pending ? pending.value : "";
+    const confirmed = pending && pending.confirmed;
+    return `
+    <tr data-row-article="${r.ext}" ${confirmed ? 'style="opacity:0.55;"' : ""}>
       <td><div class="article">${r.ext}</div><div class="article-sub">${r.name || ""}${r.brand ? " · " + r.brand : ""}</div></td>
       <td class="num">${fmtMoney(r.revenue)}</td>
       <td class="num">${r.stock}</td>
-      <td class="num"><input type="number" class="cost-input" data-article="${r.ext}" placeholder="₽" min="0" step="1"></td>
-      <td><button class="ok-btn btn-outline" data-article="${r.ext}" style="padding:5px 14px;font-size:12px;">OK</button></td>
-    </tr>
-  `).join("");
+      <td class="num"><input type="number" class="cost-input" data-article="${r.ext}" placeholder="₽" min="0" step="1" value="${value}" ${confirmed ? "disabled" : ""}></td>
+      <td><button class="ok-btn btn-outline" data-article="${r.ext}" style="padding:5px 14px;font-size:12px;">${confirmed ? "✓ Сохранено" : "OK"}</button></td>
+    </tr>`;
+  }).join("");
 }
+
+document.getElementById("noCostBody").addEventListener("input", (e) => {
+  const input = e.target.closest(".cost-input");
+  if (!input) return;
+  const art = input.dataset.article;
+  const v = input.value.trim();
+  if (v) pendingCosts[art] = { value: v, confirmed: false };
+  else delete pendingCosts[art];
+  savePendingCosts();
+});
 
 document.getElementById("noCostBody").addEventListener("click", async (e) => {
   const btn = e.target.closest(".ok-btn");
@@ -1245,6 +1287,8 @@ document.getElementById("noCostBody").addEventListener("click", async (e) => {
   }
   const line = `${btn.dataset.article}=${v}`;
   const fallback = document.getElementById("copyFallback");
+  pendingCosts[btn.dataset.article] = { value: v, confirmed: true };
+  savePendingCosts();
   try {
     await navigator.clipboard.writeText(line);
     btn.textContent = "✓ Сохранено";
